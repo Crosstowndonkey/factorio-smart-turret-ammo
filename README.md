@@ -1,5 +1,7 @@
 # Smart Turret Ammo (Factorio 2.1 mod)
 
+![The Auto-load ammo panel beside a gun turret's window](docs/screenshot-turret-panel.png)
+
 Gun, rocket, railgun and artillery turrets (and artillery wagons) keep themselves stocked with the best ammo in
 reach - no extra entities, no inserters, no interfaces. Works with other mods' turrets and ammo.
 
@@ -48,3 +50,6 @@ remote.call("smart-turret-ammo", "set_turret_ammo", turret, nil)     -- back to 
   fixed, enemy-free map, and prints PASS / FAIL for each behaviour. `tests/sta-fake-content` is a pretend other mod
   (a laser turret, laser rounds, a "mega nuke" and a biter-spawning round). It never touches `~/.factorio`.
 - `tools/package.sh` - builds `dist/smart-turret-ammo_<version>.zip` for the mod portal.
+
+## License
+MIT - see [LICENSE](LICENSE).
