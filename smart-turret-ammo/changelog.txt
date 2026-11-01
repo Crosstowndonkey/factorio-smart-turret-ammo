@@ -1,0 +1,13 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 2026-11-01
+  Features:
+    - Gun, rocket, railgun and artillery turrets, and artillery wagons, keep themselves stocked with the best ammo in reach.
+    - Planets: construction robots bring it from the logistic network. Space platforms: the hub throws it across.
+    - Worse ammo is swapped for better ammo; the old ammo goes back to storage.
+    - Works with other mods' turrets and ammo: every ammo is scored by its damage while the game loads (area damage weighted by blast radius).
+    - Never uses dangerous ammo: nukes, anything that spawns units (like capture robot rockets), or blasts wider than 10 tiles - from any mod. Ammo loaded by hand that the mod won't use is left alone.
+    - Artillery wagons are only loaded while their train stands still.
+    - Pick the ammo for one turret: a panel on the turret's window ("Auto-load ammo") with an ammo picker (only ammo the turret can fire, with quality) and an "Auto (best)" button. A picked ammo is the only one loaded; anything else is swapped out.
+    - The choice is copied with copy / paste settings (Shift + right-click, Shift + left-click) and saved in blueprints.
+    - Settings: amount to keep, refill threshold, upgrading, pausing while shooting (off by default), skipping inserter-fed turrets, turrets checked per tick, using modded ammo, a list of ammo never to use.

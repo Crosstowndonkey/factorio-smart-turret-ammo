@@ -1,0 +1,1 @@
+{"name": "sta-tests", "version": "0.0.1", "title": "Smart Turret Ammo tests", "author": "Crosstowndonkey", "factorio_version": "2.1", "dependencies": ["smart-turret-ammo", "sta-fake-content", "space-age"]}

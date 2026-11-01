@@ -1,0 +1,12 @@
+{
+  "name": "smart-turret-ammo",
+  "version": "0.1.0",
+  "title": "Smart Turret Ammo",
+  "author": "Crosstowndonkey",
+  "factorio_version": "2.1",
+  "description": "Gun, rocket, railgun and artillery turrets (and artillery wagons) keep themselves stocked with the best ammo in reach: construction robots bring it from the logistic network, and on space platforms the hub throws it across. Worse ammo is swapped for better automatically. Works with modded turrets and ammo; never uses nukes.",
+  "dependencies": [
+    "base >= 2.1",
+    "? space-age"
+  ]
+}
