@@ -12,10 +12,12 @@ Usage: tools/publish.py [--first | --gallery]
 Runs tools/package.sh first, so the zip is always fresh.
 """
 import glob
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOD = "smart-turret-ammo"
@@ -49,9 +51,18 @@ def curl(url, fields, auth=True):
 
 
 def gallery():
+    # the portal names each image by its SHA-1 and refuses one it already has, so reuse those
+    with urllib.request.urlopen(f"https://mods.factorio.com/api/mods/{MOD}/full") as r:
+        existing = {img["id"] for img in json.load(r).get("images", [])}
     ids = []
     for path in sorted(glob.glob(os.path.join(ROOT, "docs", "gallery", "*.jpg")) +
                        glob.glob(os.path.join(ROOT, "docs", "gallery", "*.png"))):
+        with open(path, "rb") as f:
+            sha = hashlib.sha1(f.read()).hexdigest()
+        if sha in existing:
+            print("Image:", os.path.basename(path), "already on the portal")
+            ids.append(sha)
+            continue
         upload_url = curl(f"{API}/images/add", [("mod", MOD)])["upload_url"]
         image = curl(upload_url, [("image", "@" + path)], auth=False)
         print("Image:", os.path.basename(path), image.get("url"))
