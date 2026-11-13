@@ -5,9 +5,13 @@ Reads the API key from ~/.config/factorio/modportal-api-key (never pass it on th
 The key needs the usages "ModPortal: Publish Mods", "ModPortal: Upload Mods" and "ModPortal: Edit Mods"
 (factorio.com/profile > API keys).
 
-Usage: tools/publish.py [--first]   (--first = brand-new mod: publish, then set details and gallery)
+Usage: tools/publish.py [--first | --gallery]
+  (nothing)  upload a new release
+  --first    brand-new mod: publish, then set details and gallery
+  --gallery  upload docs/gallery/* and set them as the gallery (in file name order); uploads no release
 Runs tools/package.sh first, so the zip is always fresh.
 """
+import glob
 import json
 import os
 import subprocess
@@ -44,7 +48,23 @@ def curl(url, fields, auth=True):
     return result
 
 
+def gallery():
+    ids = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "docs", "gallery", "*.jpg")) +
+                       glob.glob(os.path.join(ROOT, "docs", "gallery", "*.png"))):
+        upload_url = curl(f"{API}/images/add", [("mod", MOD)])["upload_url"]
+        image = curl(upload_url, [("image", "@" + path)], auth=False)
+        print("Image:", os.path.basename(path), image.get("url"))
+        ids.append(image["id"])
+    curl(f"{API}/images/edit", [("mod", MOD), ("images", ",".join(ids))])
+    print(f"Gallery set ({len(ids)} images).")
+
+
 def main():
+    if "--gallery" in sys.argv:
+        gallery()
+        print(f"https://mods.factorio.com/mod/{MOD}")
+        return
     first = "--first" in sys.argv
     zip_path = subprocess.run([os.path.join(ROOT, "tools", "package.sh")], capture_output=True, text=True,
                               check=True).stdout.strip()
