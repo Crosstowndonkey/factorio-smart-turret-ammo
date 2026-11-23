@@ -35,3 +35,5 @@ remote.call("smart-turret-ammo", "set_turret_ammo", turret, "piercing-rounds-mag
 ```
 
 Source code and tests: [GitHub](https://github.com/Crosstowndonkey/factorio-smart-turret-ammo) (MIT).
+
+Questions, bug reports or ideas: come and chat on the [Donkeywork Games Discord](https://discord.gg/AabyFdsP5p) (#mod-bugs for bugs).

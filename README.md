@@ -53,3 +53,5 @@ remote.call("smart-turret-ammo", "set_turret_ammo", turret, nil)     -- back to 
 
 ## License
 MIT - see [LICENSE](LICENSE).
+
+Questions, bug reports or ideas: come and chat on the [Donkeywork Games Discord](https://discord.gg/AabyFdsP5p) (#mod-bugs for bugs).
