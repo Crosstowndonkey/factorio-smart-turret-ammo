@@ -5,8 +5,9 @@ Reads the API key from ~/.config/factorio/modportal-api-key (never pass it on th
 The key needs the usages "ModPortal: Publish Mods", "ModPortal: Upload Mods" and "ModPortal: Edit Mods"
 (factorio.com/profile > API keys).
 
-Usage: tools/publish.py [--first | --gallery]
-  (nothing)  upload a new release
+Usage: tools/publish.py [--first | --gallery | --details]
+  (nothing)  upload a new release (the page text is NOT changed - use --details for that)
+  --details  update the portal page text from docs/portal-description.md (and the tags); uploads no release
   --first    brand-new mod: publish, then set details and gallery
   --gallery  upload docs/gallery/* and set them as the gallery (in file name order); uploads no release
 Runs tools/package.sh first, so the zip is always fresh.
@@ -74,6 +75,12 @@ def gallery():
 def main():
     if "--gallery" in sys.argv:
         gallery()
+        print(f"https://mods.factorio.com/mod/{MOD}")
+        return
+    if "--details" in sys.argv:
+        details = curl(f"{API}/edit_details", [("mod", MOD), ("description", "<" + os.path.join(ROOT, "docs", "portal-description.md")),
+                                               ("tags", "combat"), ("tags", "logistic-network"), ("homepage", SOURCE)])
+        print("Details:", details)
         print(f"https://mods.factorio.com/mod/{MOD}")
         return
     first = "--first" in sys.argv
