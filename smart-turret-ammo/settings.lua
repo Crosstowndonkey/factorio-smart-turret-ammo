@@ -4,7 +4,7 @@ data:extend({
     type = "int-setting",
     name = "sta-keep",
     setting_type = "runtime-global",
-    default_value = 50,
+    default_value = 20,
     minimum_value = 1,
     maximum_value = 200,
     order = "a",
@@ -38,6 +38,13 @@ data:extend({
     setting_type = "runtime-global",
     default_value = true,
     order = "e",
+  },
+  {
+    type = "bool-setting",
+    name = "sta-use-personal-roboports",
+    setting_type = "runtime-global",
+    default_value = false,
+    order = "e2",
   },
   {
     type = "int-setting",

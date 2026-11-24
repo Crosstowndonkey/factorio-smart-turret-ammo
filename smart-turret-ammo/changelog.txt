@@ -1,4 +1,22 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.1
+Date: 2026-11-24
+  Bugfixes:
+    - Turrets could be left empty for good: when several turrets saw the same small stock of ammo, they all asked for it, the ones that missed out waited forever (with a "missing construction materials" alert each) and never took the other ammo in storage.
+    - Swapping to better ammo could take the old ammo out of several turrets for one load of new ammo, leaving the rest empty.
+    - Turrets now share: none asks for ammo another turret is already waiting for, and swaps only happen when a full load of better ammo is spare.
+    - A request that gets no delivery for 20 seconds while its ammo is gone is cancelled, and the turret is filled with what there is. Stuck requests in saves from 0.1.0 are cleared the same way.
+    - Turrets marked for deconstruction or upgrade no longer ask for ammo.
+    - "Pause while shooting" no longer starves space platform turrets (the hub throws ammo; no robots fly).
+    - Turning "Pause while shooting" on crashed the game when the map had an artillery turret.
+  Changes:
+    - Personal roboports and spidertrons no longer count as a supply, so the mod never hands out the ammo you carry. New setting "Use ammo carried by players and spidertrons" (off) turns it back on.
+    - Swaps to better ammo (and to a picked ammo) wait until a planet turret stops shooting. Empty and low turrets are still refilled mid-fight.
+    - "Ammo to keep in each turret" now defaults to 20 (was 50) in new games, so a small stock goes further. Existing saves keep their value (Settings > Mod settings > Map to change it).
+    - A turret's picked ammo is kept through quality upgrades, and when the turret is destroyed and rebuilt from its ghost.
+    - Picking a different ammo takes effect at once (the old request is withdrawn).
+    - Turrets out of robot reach (the early game) are now skipped before the inserter check, so they cost even less.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.0
 Date: 2026-11-01
   Features:

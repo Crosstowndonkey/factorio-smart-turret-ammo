@@ -7,6 +7,10 @@
 -- for modules. On planets, construction robots fulfil it from the logistic network; on space platforms,
 -- the hub throws the items across. Swapped-out ammo goes back to storage the same way.
 --
+-- The mod keeps track of its own open requests: what they are still waiting for is "reserved", so twenty
+-- turrets don't all ask for the same thirty magazines. A request that stops moving while its ammo is gone
+-- is cancelled, so the turret can be filled with whatever there is instead.
+--
 -- Which ammo is "best" comes from data-final-fixes.lua: while the game loads it adds up every ammo's
 -- damage (any mod's) and flags dangerous ammo (nukes, unit spawners, huge blasts), which is never used.
 
@@ -27,6 +31,7 @@ local TURRET_TYPES = {"ammo-turret", "artillery-turret", "artillery-wagon"}
 
 local CHECK_INTERVAL = 60 -- each turret is checked at most once per this many ticks
 local INSERTER_CACHE_TICKS = 600 -- how long "is this turret fed by an inserter?" is remembered
+local STALE_TICKS = 1200 -- an open request with no delivery for this long, and no ammo left for it, is cancelled
 
 -- Settings, read once and refreshed when the player changes them.
 local cfg = {}
@@ -39,6 +44,7 @@ local function read_settings()
   cfg.skip_inserter_fed = s["sta-skip-inserter-fed"].value
   cfg.per_tick = s["sta-turrets-per-tick"].value
   cfg.use_modded = s["sta-use-modded-ammo"].value
+  cfg.use_personal = s["sta-use-personal-roboports"].value
   cfg.blocked = {}
   for name in string.gmatch(s["sta-blocked-ammo"].value, "[^%s,;]+") do cfg.blocked[name] = true end
 end
@@ -132,35 +138,114 @@ end
 -- Where the ammo comes from
 ---------------------------------------------------------------------------------------------------------
 
--- Returns a function that counts an item (name + quality) available to this turret, or nil if
--- nothing can deliver to it.
-local function supply_counter(turret)
+-- Is this a personal roboport's network (a player's armour, a spidertron, a tank)? Remembered per network,
+-- since a network never changes between fixed and mobile. (Only a speed-up: every machine in a multiplayer
+-- game works out the same answer, so it doesn't need to be saved.)
+local mobile_cache = {}
+local function is_mobile(net)
+  local id = net.network_id
+  local mobile = mobile_cache[id]
+  if mobile == nil then
+    local cell = net.cells[1]
+    mobile = cell ~= nil and cell.mobile or false
+    mobile_cache[id] = mobile
+  end
+  return mobile
+end
+
+-- Where this turret's ammo can come from: a list of {id, net} (logistic networks whose robots reach it) or
+-- {id, inv} (a space platform's hub), or nil when nothing can deliver to it. Personal roboports only count
+-- when the setting allows it, so the mod never hands out the ammo a player or spidertron is carrying.
+local function supply_sources(turret)
   local platform = turret.surface.platform
   if platform then
     local hub = platform.hub
     if not (hub and hub.valid) then return nil end
     local inv = hub.get_inventory(defines.inventory.hub_main)
     if not inv then return nil end
-    return function(name, quality) return inv.get_item_count({name = name, quality = quality}) end
+    return {{id = "hub:" .. platform.index, inv = inv}}
   end
-  local networks = turret.surface.find_logistic_networks_by_construction_area(turret.position, turret.force)
-  if #networks == 0 then return nil end
-  return function(name, quality)
-    local best = 0
-    for _, net in pairs(networks) do
-      if net.valid then
-        local n = net.get_item_count({name = name, quality = quality})
-        if n > best then best = n end
-      end
+  local sources = {}
+  for _, net in pairs(turret.surface.find_logistic_networks_by_construction_area(turret.position, turret.force)) do
+    if net.valid and (cfg.use_personal or not is_mobile(net)) then
+      table.insert(sources, {id = net.network_id, net = net})
     end
-    return best
   end
+  if #sources == 0 then return nil end
+  return sources
+end
+
+local function item_key(name, quality) return name .. "/" .. quality end
+
+-- How many of this item a turret may still ask for: what the best source holds, minus what this mod's other
+-- open requests from that source are still waiting for. Returns the count and the id of that source.
+-- (The game's own count already leaves out items robots are on their way to fetch; it doesn't know about
+-- requests no robot has picked up yet - that is what the reservations are for.)
+-- own: the turret's own open request, which doesn't count against itself.
+local function free_count(sources, name, quality, own)
+  local id_q = {name = name, quality = quality}
+  local key = item_key(name, quality)
+  local best, best_id = 0, nil
+  for _, src in pairs(sources) do
+    local n = src.inv and src.inv.get_item_count(id_q) or src.net.get_item_count(id_q)
+    local by_source = storage.reserved[src.id]
+    local r = by_source and by_source[key] or 0
+    if own and own.supply == src.id and own.key == key then r = r - own.remaining end
+    n = n - r
+    if n > best then best, best_id = n, src.id end
+  end
+  return best, best_id
+end
+
+---------------------------------------------------------------------------------------------------------
+-- The mod's open requests
+--   storage.pending[turret unit_number] = {proxy, name, quality, key, supply, remaining, progress_tick}
+--   storage.reserved[source id][item key] = how many items open requests from that source still need
+---------------------------------------------------------------------------------------------------------
+
+local function reserve(supply, key, count)
+  local by_source = storage.reserved[supply]
+  if not by_source then
+    by_source = {}
+    storage.reserved[supply] = by_source
+  end
+  by_source[key] = (by_source[key] or 0) + count
+end
+
+-- Once a second: re-count what every open request still needs (it shrinks as robots deliver), note which
+-- ones made progress, and forget the finished ones. Rebuilding the totals from scratch keeps them exact.
+local function refresh_pending()
+  storage.reserved = {}
+  for unit, p in pairs(storage.pending) do
+    if p.proxy.valid then
+      local left = 0
+      for _, r in pairs(p.proxy.item_requests) do
+        if r.name == p.name and (r.quality or "normal") == p.quality then left = left + r.count end
+      end
+      if left < p.remaining then p.progress_tick = game.tick end
+      p.remaining = left
+      if left > 0 then reserve(p.supply, p.key, left) end
+    else
+      storage.pending[unit] = nil
+    end
+  end
+end
+
+-- Withdraw this turret's open request (robots already carrying items take them back to storage).
+local function cancel_request(unit)
+  local p = storage.pending[unit]
+  if not p then return end
+  storage.pending[unit] = nil
+  if p.proxy.valid then p.proxy.destroy() end
+  local by_source = storage.reserved[p.supply]
+  if by_source and by_source[p.key] then by_source[p.key] = math.max(0, by_source[p.key] - p.remaining) end
 end
 
 ---------------------------------------------------------------------------------------------------------
 -- Checks on a turret
 ---------------------------------------------------------------------------------------------------------
 
+-- Does an inserter put items into this turret? (Loaders can't feed turrets.)
 local function fed_by_inserter(turret)
   local cache = storage.inserter_cache
   local entry = cache[turret.unit_number]
@@ -195,8 +280,11 @@ local function amount_to_keep(turret, name)
   return math.min(cfg.keep, limit)
 end
 
-local function request(turret, inventory_id, name, quality, count, stack_index, removal)
-  turret.surface.create_entity{
+local function refill_below(keep) return math.max(1, math.floor(keep * cfg.refill_fraction)) end
+
+-- Ask for count of this ammo, from the given source, and remember the request (and reserve its items).
+local function request(turret, inventory_id, name, quality, count, stack_index, removal, supply)
+  local proxy = turret.surface.create_entity{
     name = "item-request-proxy",
     position = turret.position,
     force = turret.force,
@@ -207,26 +295,66 @@ local function request(turret, inventory_id, name, quality, count, stack_index, 
     }},
     removal_plan = removal,
   }
+  if proxy then
+    local key = item_key(name, quality)
+    storage.pending[turret.unit_number] = {proxy = proxy, name = name, quality = quality, key = key,
+      supply = supply, remaining = count, progress_tick = game.tick}
+    reserve(supply, key, count)
+  end
+end
+
+-- "Take the loaded ammo out" (the first half of a swap).
+local function removal_of(loaded, inventory_id)
+  return {{
+    id = {name = loaded.name, quality = loaded.quality},
+    items = {in_inventory = {{inventory = inventory_id, stack = loaded.index, count = loaded.count}}},
+  }}
+end
+
+-- A request is already open for this turret. Other people's requests (from a blueprint) are left alone.
+-- One of ours is cancelled if the turret is about to be removed, or if nothing has been delivered for a
+-- while and there is no ammo left for it - then the next check fills the turret with what there is.
+local function check_open_request(turret, proxy)
+  local unit = turret.unit_number
+  local p = storage.pending[unit]
+  if not (p and p.proxy.valid and p.proxy == proxy) then return end
+  if turret.to_be_deconstructed() or turret.to_be_upgraded() then
+    cancel_request(unit)
+  elseif game.tick - p.progress_tick >= STALE_TICKS then
+    local sources = supply_sources(turret)
+    if not sources or free_count(sources, p.name, p.quality, p) <= 0 then cancel_request(unit) end
+  end
 end
 
 -- Decide what (if anything) this turret should ask for.
 local function service(turret)
-  if turret.item_request_proxy then return end -- a request is already on its way
+  local proxy = turret.item_request_proxy
+  if proxy then return check_open_request(turret, proxy) end
+  storage.pending[turret.unit_number] = nil -- (a finished request; refresh_pending would forget it too)
+  if turret.to_be_deconstructed() or turret.to_be_upgraded() then return end -- don't fill what's being removed
+
+  -- Swaps (taking ammo out to put better in) wait until a planet turret stops shooting. On space platforms
+  -- the hub throws ammo straight across, and turrets there are rarely idle, so they swap any time.
+  local on_platform = turret.surface.platform ~= nil
+  local hold_swaps = false
   if turret.type == "artillery-wagon" then
     local train = turret.train
     if train and train.speed ~= 0 then return end -- robots can't load a moving train
-  elseif cfg.pause_while_shooting and turret.shooting_target then
-    return
+  elseif turret.type == "ammo-turret" and turret.shooting_target then
+    -- (only ammo turrets can say what they're shooting at: asking an artillery turret is an error)
+    -- (the pause setting keeps robots out of fights, so it doesn't apply on platforms either)
+    if cfg.pause_while_shooting and not on_platform then return end
+    hold_swaps = not on_platform
   end
-  if cfg.skip_inserter_fed and fed_by_inserter(turret) then return end
+
   local inventory_id = AMMO_INVENTORY[turret.type]
   local inv = inventory_id and turret.get_inventory(inventory_id)
   if not inv or #inv == 0 then return end
-
   local candidates = candidates_for(turret)
   if #candidates == 0 then return end
-  local available = supply_counter(turret)
-  if not available then return end
+  local sources = supply_sources(turret)
+  if not sources then return end -- no robots in reach (the early game): nothing to do
+  if cfg.skip_inserter_fed and fed_by_inserter(turret) then return end
 
   local loaded = loaded_ammo(inv)
 
@@ -234,20 +362,14 @@ local function service(turret)
   local choice = storage.choices[turret.unit_number]
   if choice then
     local keep = amount_to_keep(turret, choice.name)
-    local have = available(choice.name, choice.quality)
+    local have, supply = free_count(sources, choice.name, choice.quality)
     if loaded and loaded.name == choice.name and loaded.quality == choice.quality then
-      if loaded.count < math.max(1, math.floor(keep * cfg.refill_fraction)) and have > 0 then
-        request(turret, inventory_id, choice.name, choice.quality, math.min(keep - loaded.count, have), loaded.index)
+      if loaded.count < refill_below(keep) and have > 0 then
+        request(turret, inventory_id, choice.name, choice.quality, math.min(keep - loaded.count, have), loaded.index, nil, supply)
       end
-    elseif have > 0 then
-      local removal
-      if loaded then
-        removal = {{
-          id = {name = loaded.name, quality = loaded.quality},
-          items = {in_inventory = {{inventory = inventory_id, stack = loaded.index, count = loaded.count}}},
-        }}
-      end
-      request(turret, inventory_id, choice.name, choice.quality, math.min(keep, have), loaded and loaded.index or 0, removal)
+    elseif have > 0 and not (loaded and hold_swaps) then
+      request(turret, inventory_id, choice.name, choice.quality, math.min(keep, have), loaded and loaded.index or 0,
+        loaded and removal_of(loaded, inventory_id), supply)
     end
     return
   end
@@ -255,9 +377,9 @@ local function service(turret)
   -- Empty: fill it with the best ammo there is any of.
   if not loaded then
     for _, c in ipairs(candidates) do
-      local have = available(c.name, c.quality)
+      local have, supply = free_count(sources, c.name, c.quality)
       if have > 0 then
-        request(turret, inventory_id, c.name, c.quality, math.min(amount_to_keep(turret, c.name), have), 0)
+        request(turret, inventory_id, c.name, c.quality, math.min(amount_to_keep(turret, c.name), have), 0, nil, supply)
         return
       end
     end
@@ -268,18 +390,15 @@ local function service(turret)
   local loaded_score = ammo_score(loaded.name)
   if not loaded_score then return end
 
-  -- Better ammo available? Only swap for a full load, so a handful of rounds can't cause swapping back
-  -- and forth.
-  if cfg.upgrade then
+  -- Better ammo available? Only swap for a full load nobody else has asked for, so a handful of rounds can't
+  -- cause swapping back and forth, and a turret is never emptied for ammo that then doesn't come.
+  if cfg.upgrade and not hold_swaps then
     for _, c in ipairs(candidates) do
       if not better(c.score, c.level, loaded_score, loaded.level) then break end
       local keep = amount_to_keep(turret, c.name)
-      if available(c.name, c.quality) >= keep then
-        local removal = {{
-          id = {name = loaded.name, quality = loaded.quality},
-          items = {in_inventory = {{inventory = inventory_id, stack = loaded.index, count = loaded.count}}},
-        }}
-        request(turret, inventory_id, c.name, c.quality, keep, loaded.index, removal)
+      local have, supply = free_count(sources, c.name, c.quality)
+      if have >= keep then
+        request(turret, inventory_id, c.name, c.quality, keep, loaded.index, removal_of(loaded, inventory_id), supply)
         return
       end
     end
@@ -288,10 +407,10 @@ local function service(turret)
   -- Running low? Top up with the same ammo. (If that ammo has run out, the turret uses up what it has
   -- and is then refilled with the best ammo left.)
   local keep = amount_to_keep(turret, loaded.name)
-  if loaded.count < math.max(1, math.floor(keep * cfg.refill_fraction)) then
-    local have = available(loaded.name, loaded.quality)
+  if loaded.count < refill_below(keep) then
+    local have, supply = free_count(sources, loaded.name, loaded.quality)
     if have > 0 then
-      request(turret, inventory_id, loaded.name, loaded.quality, math.min(keep - loaded.count, have), loaded.index)
+      request(turret, inventory_id, loaded.name, loaded.quality, math.min(keep - loaded.count, have), loaded.index, nil, supply)
     end
   end
 end
@@ -322,6 +441,41 @@ local function init_storage()
   storage.overrides = storage.overrides or {}
   storage.choices = storage.choices or {} -- unit_number -> {name, quality}: ammo the player picked
   storage.open_turret = storage.open_turret or {} -- player index -> the turret whose window is open
+  storage.pending = storage.pending or {} -- the mod's open requests (see "The mod's open requests")
+  storage.reserved = storage.reserved or {}
+  storage.mined = storage.mined or {} -- choices of turrets mined this tick, by spot (see on_mined)
+  storage.mined_tick = storage.mined_tick or -1
+end
+
+-- Saves from 0.1.0 have no record of the requests that version made, and some may be stuck. Adopt every open
+-- request on a turret that asks only for ammo, so a stuck one is cancelled like any other.
+local function adopt_open_requests()
+  for unit, turret in pairs(storage.turrets) do
+    local proxy = turret.valid and not storage.pending[unit] and turret.item_request_proxy
+    if proxy then
+      local reqs = proxy.item_requests
+      local only_ammo = reqs[1] ~= nil
+      for _, r in pairs(reqs) do
+        local item = prototypes.item[r.name]
+        if not (item and item.type == "ammo") then only_ammo = false end
+      end
+      if only_ammo then
+        -- Checked straight away: a hopeless one (none of its ammo left, or no source in reach - say it was a
+        -- personal roboport's) is cancelled at the turret's next check.
+        local sources = supply_sources(turret)
+        local first = reqs[1]
+        local quality = first.quality or "normal"
+        local left = 0
+        for _, r in pairs(reqs) do
+          if r.name == first.name and (r.quality or "normal") == quality then left = left + r.count end
+        end
+        storage.pending[unit] = {proxy = proxy, name = first.name, quality = quality,
+          key = item_key(first.name, quality), supply = sources and sources[1].id or "none", remaining = left,
+          progress_tick = game.tick - STALE_TICKS}
+      end
+    end
+  end
+  refresh_pending()
 end
 
 script.on_init(function()
@@ -339,7 +493,9 @@ script.on_configuration_changed(function()
   read_settings()
   reset_caches()
   score_data = nil
+  mobile_cache = {}
   scan_all()
+  adopt_open_requests()
 end)
 
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(e)
@@ -352,10 +508,36 @@ end)
 local built_filter = {}
 for _, t in pairs(TURRET_TYPES) do table.insert(built_filter, {filter = "type", type = t}) end
 local set_choice -- defined below
+
+local function spot_key(entity)
+  local pos = entity.position
+  return entity.surface.index .. ":" .. pos.x .. ":" .. pos.y
+end
+
+-- A turret with a picked ammo was mined. If a new turret is built on the same spot in the same tick, that was a
+-- quality upgrade or a fast-replace, and the new turret keeps the pick (see on_built).
+local function on_mined(e)
+  local entity = e.entity
+  local choice = entity and entity.valid and entity.unit_number and storage.choices[entity.unit_number]
+  if not choice then return end
+  if storage.mined_tick ~= game.tick then
+    storage.mined = {}
+    storage.mined_tick = game.tick
+  end
+  storage.mined[spot_key(entity)] = choice
+end
+for _, ev in pairs({defines.events.on_player_mined_entity, defines.events.on_robot_mined_entity,
+                    defines.events.on_space_platform_mined_entity}) do
+  script.on_event(ev, on_mined, built_filter)
+end
+
 local function on_built(e)
-  add_turret(e.entity)
+  local entity = e.entity
+  add_turret(entity)
+  if not (entity and entity.valid) then return end
   local tag = e.tags and e.tags.sta_ammo
-  if tag and e.entity and e.entity.valid then set_choice(e.entity, tag.name, tag.quality) end
+  if not tag and storage.mined_tick == game.tick then tag = storage.mined[spot_key(entity)] end
+  if tag then set_choice(entity, tag.name, tag.quality) end
 end
 for _, ev in pairs({defines.events.on_built_entity, defines.events.on_robot_built_entity,
                     defines.events.on_space_platform_built_entity, defines.events.script_raised_built,
@@ -363,8 +545,26 @@ for _, ev in pairs({defines.events.on_built_entity, defines.events.on_robot_buil
   script.on_event(ev, on_built, built_filter)
 end
 
+-- A turret with a picked ammo was destroyed: its ghost remembers the pick, so the rebuilt turret gets it back.
+script.on_event(defines.events.on_post_entity_died, function(e)
+  local choice = e.unit_number and storage.choices[e.unit_number]
+  local ghost = e.ghost
+  if not (choice and ghost and ghost.valid) then return end
+  local tags = ghost.tags or {}
+  tags.sta_ammo = {name = choice.name, quality = choice.quality}
+  ghost.tags = tags
+end, built_filter)
+
+-- Another mod copied a turret (e.g. a spaceship mod moving a ship): the copy is looked after too, with its pick.
+script.on_event(defines.events.on_entity_cloned, function(e)
+  add_turret(e.destination)
+  local choice = e.source.valid and e.source.unit_number and storage.choices[e.source.unit_number]
+  if choice and e.destination.valid then set_choice(e.destination, choice.name, choice.quality) end
+end, built_filter)
+
 -- Check a few turrets each tick, in rotation. Never more than the whole list once per CHECK_INTERVAL.
-script.on_event(defines.events.on_tick, function()
+script.on_event(defines.events.on_tick, function(e)
+  if e.tick % CHECK_INTERVAL == 0 then refresh_pending() end
   local queue = storage.queue
   local n = #queue
   if n == 0 then return end
@@ -382,6 +582,7 @@ script.on_event(defines.events.on_tick, function()
       storage.turrets[id] = nil
       storage.inserter_cache[id] = nil
       storage.choices[id] = nil
+      cancel_request(id)
       queue[i] = queue[#queue]
       queue[#queue] = nil
     end
@@ -410,11 +611,13 @@ end
 
 set_choice = function(turret, name, quality)
   if not (turret and turret.valid and turret.unit_number and AMMO_INVENTORY[turret.type]) then return end
-  if name and can_fire(turret, name) then
-    storage.choices[turret.unit_number] = {name = name, quality = quality or "normal"}
-  else
-    storage.choices[turret.unit_number] = nil
-  end
+  local unit = turret.unit_number
+  local old, new = storage.choices[unit], nil
+  if name and can_fire(turret, name) then new = {name = name, quality = quality or "normal"} end
+  storage.choices[unit] = new
+  -- a new pick takes effect at once: a request for the old one is withdrawn
+  local function key(c) return c and item_key(c.name, c.quality) or "" end
+  if key(old) ~= key(new) then cancel_request(unit) end
 end
 
 local PANEL = "sta_panel"

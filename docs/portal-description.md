@@ -2,8 +2,9 @@ Gun, rocket, railgun and artillery turrets - and artillery wagons - keep themsel
 
 - **On planets**, construction robots bring ammo from your logistic network.
 - **On space platforms**, the hub throws it across from its inventory.
-- **Upgrades itself:** when your network has a full load of better ammo, the old ammo goes back to storage and the better ammo goes in. Yellow < red < uranium, rocket < explosive rocket, then higher quality.
-- **Pick the ammo yourself:** open a turret and use the **Auto-load ammo** panel beside its window. The picker only shows ammo that turret can fire (with quality). **Auto (best)** goes back to automatic. Copy / paste settings copies the choice, and blueprints remember it.
+- **Upgrades itself:** when your network has a full load of better ammo, the old ammo goes back to storage and the better ammo goes in (on planets, once the turret stops shooting). Yellow < red < uranium, rocket < explosive rocket, then higher quality.
+- **Shares scarce ammo:** no turret asks for ammo another turret is already waiting for, so none sits empty while other ammo is in storage.
+- **Pick the ammo yourself:** open a turret and use the **Auto-load ammo** panel beside its window. The picker only shows ammo that turret can fire (with quality). **Auto (best)** goes back to automatic. Copy / paste settings copies the choice, and blueprints, quality upgrades and rebuilt turrets remember it.
 
 ## Works with other mods
 - Any modded ammo turret or artillery is handled automatically.
@@ -13,11 +14,12 @@ Gun, rocket, railgun and artillery turrets - and artillery wagons - keep themsel
 ## Settings (Settings > Mod settings > Map)
 | Setting | Default |
 |---|---|
-| Ammo to keep in each turret (capped at one stack) | 50 |
+| Ammo to keep in each turret (capped at one stack) | 20 |
 | Refill when below (% of the amount kept) | 40 |
 | Swap worse ammo for better ammo | on |
 | Pause requests while a turret is shooting | off |
 | Skip turrets fed by inserters | on |
+| Use ammo carried by players and spidertrons | off |
 | Turrets checked per tick | 20 |
 | Use ammo from other mods | on |
 | Never use these ammo items (comma-separated names) | empty |
@@ -25,6 +27,8 @@ Gun, rocket, railgun and artillery turrets - and artillery wagons - keep themsel
 ## Good to know
 - Turrets are checked in rotation, at most once a second each, so big bases stay cheap.
 - Artillery wagons are only loaded while their train is standing still.
+- The ammo in your inventory (or a spidertron's trunk) is never handed out, unless you turn that setting on.
+- Before you have construction robots the mod does nothing at all; hand-fed turrets are left as they are.
 - A turret down to its last few rounds of an ammo that has run out finishes them before switching, so it never swaps back and forth.
 
 ## For mod authors

@@ -22,4 +22,4 @@ grep "^STA" "$WORK/create.log" || true
   --benchmark-ticks 6100 --benchmark-runs 1 > "$WORK/run.log" 2>&1 || true
 grep -E "^STA" "$WORK/run.log" || true
 grep -q "Error" "$WORK/run.log" && sed -n "/Error/,+12p" "$WORK/run.log" | head -30 || true
-grep -q "Error" "$WORK/create.log" && grep -A5 "Error" "$WORK/create.log" || true
+grep -q "Error" "$WORK/create.log" && grep -A8 "Error" "$WORK/create.log" || true

@@ -90,6 +90,9 @@ local function build_platform(f)
   return T
 end
 
+local qa = require("qa")
+local KEEP = 20 -- the default "ammo to keep in each turret" (it was 50 before 0.1.1)
+
 script.on_init(function()
   local f = game.forces.player
   f.research_all_technologies()
@@ -118,6 +121,9 @@ script.on_init(function()
   T.nuke_lock = s.create_entity{name = "rocket-turret", position = {-12, 13}, force = f}
   script.raise_script_built{entity = T.nuke_lock}
   remote.call("smart-turret-ammo", "set_turret_ammo", T.nuke_lock, "atomic-bomb", "normal")
+
+  -- the scenarios from the 0.1.1 QA pass, each in its own little base far from this one
+  qa.setup(f)
 end)
 
 local function check(name, ok, detail)
@@ -126,21 +132,22 @@ local function check(name, ok, detail)
 end
 
 script.on_event(defines.events.on_tick, function(e)
+  qa.on_tick(e.tick)
   if e.tick ~= 6000 then return end
   local T = storage.T
   local function d(t) local n, q, c = ammo_of(t) return tostring(n) .. "/" .. tostring(q) .. " x" .. c end
   local n, q, c
 
   n, q, c = ammo_of(T.empty_gun)
-  check("empty gun turret gets the best ammo (rare uranium), a full load", n == "uranium-rounds-magazine" and q == "rare" and c == 50, d(T.empty_gun))
+  check("empty gun turret gets the best ammo (rare uranium), a full load", n == "uranium-rounds-magazine" and q == "rare" and c == KEEP, d(T.empty_gun))
   n, q, c = ammo_of(T.yellow_gun)
-  check("yellow ammo is swapped for rare uranium", n == "uranium-rounds-magazine" and q == "rare" and c == 50, d(T.yellow_gun))
+  check("yellow ammo is swapped for rare uranium", n == "uranium-rounds-magazine" and q == "rare" and c == KEEP, d(T.yellow_gun))
   n, q, c = ammo_of(T.low_gun)
-  check("low turret (5) is topped up to 50", n == "uranium-rounds-magazine" and q == "rare" and c == 50, d(T.low_gun))
+  check("low turret (5) is topped up to " .. KEEP, n == "uranium-rounds-magazine" and q == "rare" and c == KEEP, d(T.low_gun))
   n, q, c = ammo_of(T.rocket)
   check("rocket turret gets explosive rockets, never the atomic bomb", n == "explosive-rocket", d(T.rocket))
   n, q, c = ammo_of(T.railgun)
-  local keep = math.min(50, prototypes.item["railgun-ammo"].stack_size)
+  local keep = math.min(KEEP, prototypes.item["railgun-ammo"].stack_size)
   check("railgun gets railgun ammo, capped at a stack (" .. keep .. ")", n == "railgun-ammo" and c == keep, d(T.railgun))
   n, q, c = ammo_of(T.nuke_rocket)
   check("a hand-loaded atomic bomb is left alone", n == "atomic-bomb" and c == 1, d(T.nuke_rocket))
@@ -148,20 +155,20 @@ script.on_event(defines.events.on_tick, function(e)
   check("inserter-fed turret is skipped", n == nil and T.inserter_gun.item_request_proxy == nil, d(T.inserter_gun))
 
   n, q, c = ammo_of(T.p_gun)
-  check("platform gun turret gets red ammo from the hub", n == "piercing-rounds-magazine" and c == 50, d(T.p_gun))
+  check("platform gun turret gets red ammo from the hub", n == "piercing-rounds-magazine" and c == KEEP, d(T.p_gun))
   n, q, c = ammo_of(T.p_rocket)
-  check("platform rocket turret gets rockets from the hub", n == "rocket" and c == 50, d(T.p_rocket))
+  check("platform rocket turret gets rockets from the hub", n == "rocket" and c == KEEP, d(T.p_rocket))
   n, q, c = ammo_of(T.p_railgun)
   check("platform railgun gets railgun ammo from the hub", n == "railgun-ammo" and c == keep, d(T.p_railgun))
 
   n, q, c = ammo_of(T.laser)
-  check("modded turret gets the modded ammo with the most damage", n == "sta-laser-round" and c == 50, d(T.laser))
+  check("modded turret gets the modded ammo with the most damage", n == "sta-laser-round" and c == KEEP, d(T.laser))
   n, q, c = ammo_of(T.artillery)
-  local art_keep = math.min(50, T.artillery.prototype.ammo_stack_limit)
+  local art_keep = math.min(KEEP, T.artillery.prototype.ammo_stack_limit)
   check("artillery turret gets shells (" .. art_keep .. ", its slot limit)", n == "artillery-shell" and c == art_keep, d(T.artillery))
   if T.wagon then
     n, q, c = ammo_of(T.wagon)
-    check("artillery wagon (standing still) gets shells", n == "artillery-shell" and c == 50, d(T.wagon))
+    check("artillery wagon (standing still) gets shells", n == "artillery-shell" and c == math.min(KEEP, T.wagon.prototype.ammo_stack_limit or KEEP), d(T.wagon))
   else
     check("artillery wagon could be placed for the test", false, "no wagon")
   end
@@ -186,7 +193,7 @@ script.on_event(defines.events.on_tick, function(e)
   end
 
   n, q, c = ammo_of(T.locked_gun)
-  check("a turret locked to red ammo gets red, even with uranium around", n == "piercing-rounds-magazine" and q == "normal" and c == 50, d(T.locked_gun))
+  check("a turret locked to red ammo gets red, even with uranium around", n == "piercing-rounds-magazine" and q == "normal" and c == KEEP, d(T.locked_gun))
   T.bp_gun = game.surfaces.nauvis.find_entities_filtered{name = "gun-turret", position = storage.bp_ghost_pos, radius = 0.5}[1]
   if not T.bp_gun then
     local ghosts = game.surfaces.nauvis.find_entities_filtered{name = "entity-ghost"}
@@ -197,13 +204,14 @@ script.on_event(defines.events.on_tick, function(e)
   end
   n, q, c = nil, nil, 0
   if T.bp_gun then n, q, c = ammo_of(T.bp_gun) end
-  check("a turret built from a blueprint tagged 'yellow' gets yellow", n == "firearm-magazine" and c == 50, T.bp_gun and d(T.bp_gun) or "-")
+  check("a turret built from a blueprint tagged 'yellow' gets yellow", n == "firearm-magazine" and c == KEEP, T.bp_gun and d(T.bp_gun) or "-")
   check("locking a rocket turret to the atomic bomb is refused", remote.call("smart-turret-ammo", "get_turret_ammo", T.nuke_lock) == nil,
     "loaded: " .. d(T.nuke_lock))
 
   local chest_nukes = game.surfaces.nauvis.find_entities_filtered{name = "storage-chest", position = {3.5, -2.5}, radius = 1}[1].get_item_count("atomic-bomb")
   check("no atomic bombs left the storage chest", chest_nukes == 10, "chest has " .. chest_nukes)
   local yellow_back = game.surfaces.nauvis.find_entities_filtered{name = "storage-chest", position = {3.5, -2.5}, radius = 1}[1].get_item_count("firearm-magazine")
-  check("the swapped-out yellow ammo went back to storage (210, minus 50 for the blueprint turret)", yellow_back == 160, "chest has " .. yellow_back)
+  check("the swapped-out yellow ammo went back to storage (210, minus " .. KEEP .. " for the blueprint turret)", yellow_back == 210 - KEEP, "chest has " .. yellow_back)
+  qa.final_checks(check)
   print("STA DONE failures=" .. (storage.failed or 0))
 end)
