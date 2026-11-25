@@ -3,6 +3,7 @@
 -- every tick and final_checks() at tick 6000. (Turrets keep the default 20 ammo.)
 
 local qa = {}
+local scenes = require("__sta-suites__/scenes") -- (case 5's long network and slow robots)
 
 local function ammo_of(t)
   local inv = t.get_inventory(defines.inventory.turret_ammo)
@@ -96,13 +97,18 @@ function qa.setup(f)
     table.insert(Q.personal, turret(s, f, 1595 + i * 3, 6, i == 0 and {name = "piercing-rounds-magazine", count = 20} or nil))
   end
 
-  -- 5. a network with no robots (so requests stay open): a turret marked for deconstruction asks for nothing;
-  -- a turret whose pick changes from red to yellow gets its request changed at once
-  base(s, f, 2000, 0, {{name = "piercing-rounds-magazine", count = 200}, {name = "firearm-magazine", count = 200}})
-  Q.marked = turret(s, f, 2000, 15)
-  Q.marked.order_deconstruction(f)
-  Q.unmarked = turret(s, f, 2006, 15)
-  Q.repick = turret(s, f, 2012, 15)
+  -- 5. requests that stay open for a while: a turret marked for deconstruction asks for nothing; a turret whose
+  -- pick changes from red to yellow gets its request changed at once. (Until the 2026-11-25 pass this used a network
+  -- with no robots to keep requests open; the mod now ignores such networks (C3), so instead the robots are slow -
+  -- a force with no research - and the ammo is ~150 tiles from the turrets, ~40 s of flying. Both are looked at at
+  -- tick 900, long before any robot arrives, also the one coming to deconstruct the marked turret.)
+  local slow = scenes.slow_force()
+  local _, last = scenes.long_network(s, slow, 2000, 0, 3, 50,
+    {{name = "piercing-rounds-magazine", count = 200}, {name = "firearm-magazine", count = 200}})
+  Q.marked = turret(s, slow, last + 6, 15)
+  Q.marked.order_deconstruction(slow)
+  Q.unmarked = turret(s, slow, last + 12, 15)
+  Q.repick = turret(s, slow, last + 18, 15)
   remote.call("smart-turret-ammo", "set_turret_ammo", Q.repick, "piercing-rounds-magazine", "normal")
 
   -- 6. a turret in a long fight (yellow ammo barely scratches a behemoth): no swap to uranium until it's over
@@ -140,6 +146,13 @@ function qa.on_tick(tick)
     Q.repick_wanted_red = wants(Q.repick, "piercing-rounds-magazine")
     remote.call("smart-turret-ammo", "set_turret_ammo", Q.repick, "firearm-magazine", "normal")
     Q.died.die("enemy")
+  end
+  if tick == 900 then -- 5: robots are still on their way (see setup)
+    Q.marked_ok = Q.marked.valid and Q.marked.item_request_proxy == nil
+    Q.unmarked_asks = Q.unmarked.item_request_proxy ~= nil
+    Q.marked_text = "marked: " .. describe(Q.marked) .. "; unmarked: " .. describe(Q.unmarked)
+    Q.repick_wants_yellow = wants(Q.repick, "firearm-magazine") and not wants(Q.repick, "piercing-rounds-magazine")
+    Q.repick_after = describe(Q.repick)
   end
   if tick == 480 and Q.biter.valid then -- (researched damage kills the behemoth at about tick 650)
     Q.fighter_had_target = Q.fighter.shooting_target ~= nil
@@ -190,12 +203,11 @@ function qa.final_checks(check)
       .. describe(Q.personal[2]) .. "; " .. describe(Q.personal[3]))
 
   check("a turret marked for deconstruction asks for nothing (an unmarked one does)",
-    Q.marked.valid and Q.marked.item_request_proxy == nil and Q.unmarked.item_request_proxy ~= nil,
-    "marked: " .. describe(Q.marked) .. "; unmarked: " .. describe(Q.unmarked))
+    Q.marked_ok and Q.unmarked_asks, "at tick 900: " .. tostring(Q.marked_text))
 
   check("changing a turret's pick changes its open request at once",
-    Q.repick_wanted_red and wants(Q.repick, "firearm-magazine") and not wants(Q.repick, "piercing-rounds-magazine"),
-    "before: " .. tostring(Q.repick_first) .. "; after: " .. describe(Q.repick))
+    Q.repick_wanted_red and Q.repick_wants_yellow,
+    "before (tick 300): " .. tostring(Q.repick_first) .. "; after (tick 900): " .. tostring(Q.repick_after))
 
   check("a shooting turret keeps its ammo until the fight is over, then swaps to uranium",
     Q.fighter_had_target and Q.fighter_kept_yellow and (ammo_of(Q.fighter)) == "uranium-rounds-magazine",

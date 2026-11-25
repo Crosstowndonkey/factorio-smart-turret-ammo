@@ -3,12 +3,19 @@
 -- artillery shells, clusters and nested effects; area damage counts extra, weighted by its radius), and flag ammo that must never be loaded automatically
 -- (nukes, anything that spawns units, huge blasts). The results go into a "mod-data" prototype, which
 -- control.lua reads in the running game as prototypes.mod_data["smart-turret-ammo-scores"].data.
+-- Only what is in data.raw when this runs can be seen: a mod that adds or changes ammo in its own
+-- data-final-fixes after this one isn't scored (control.lua then never loads that ammo, and logs its name).
 
 local DANGER_RADIUS = 10 -- an area effect bigger than this is a weapon of mass destruction, not turret ammo
 local DANGER_ENTITY_TYPES = {
   ["unit"] = true, ["unit-spawner"] = true, ["spider-unit"] = true, ["segmented-unit"] = true,
   ["capture-robot"] = true, ["combat-robot"] = true, ["character"] = true, ["land-mine"] = true,
   ["turret"] = true, ["ammo-turret"] = true,
+}
+-- Ammo whose harm is done by another mod's script, which no walk through the prototypes can see.
+-- Each is flagged dangerous with the reason given here.
+local NEVER_AUTOMATIC = {
+  ["se-plague-bomb"] = "a planet-wide plague (made by Space Exploration's script)",
 }
 
 local function as_list(x)
@@ -32,25 +39,38 @@ end
 
 local walk_trigger -- defined below; the functions call each other
 
-local function walk_effects(effects, result, depth)
+-- seen: the entities this branch has already followed, so each is walked once.
+local function walk_effects(effects, result, depth, seen)
   for _, eff in pairs(as_list(effects)) do
     local repeat_count = eff.repeat_count or 1
     if eff.type == "damage" and eff.damage then
       result.damage = result.damage + (eff.damage.amount or 0) * repeat_count
     elseif eff.type == "nested-result" then
-      walk_trigger(eff.action, result, depth + 1)
+      walk_trigger(eff.action, result, depth + 1) -- (a fresh "seen": each branch's damage counts in full)
     elseif eff.type == "create-entity" or eff.type == "create-explosion" then
       local name = eff.entity_name or ""
       if name:find("nuke") or name:find("atomic") then result.danger = "creates " .. name end
       local proto, proto_type = find_entity(name)
       if proto_type and DANGER_ENTITY_TYPES[proto_type] then result.danger = "spawns a " .. proto_type end
+      -- The entity it creates (an explosion, a cloud) can hide the real weapon in its own effects: Cerys'
+      -- neutron bomb makes an explosion whose created_effect fires 175 projectiles over a radius of 200.
+      -- Those are checked for danger only; their damage doesn't change the ammo's score.
+      if proto and not seen["created:" .. name] then
+        seen["created:" .. name] = true
+        local inner = {damage = 0}
+        walk_trigger(proto.action, inner, depth + 1, seen)
+        walk_trigger(proto.final_action, inner, depth + 1, seen)
+        walk_trigger(proto.created_effect, inner, depth + 1, seen)
+        if inner.danger and not result.danger then result.danger = inner.danger .. " (in " .. name .. ")" end
+      end
     end
   end
 end
 
 local function walk_delivery(delivery, result, depth, seen)
   for _, d in pairs(as_list(delivery)) do
-    walk_effects(d.target_effects, result, depth)
+    walk_effects(d.target_effects, result, depth, seen)
+    walk_effects(d.source_effects, result, depth, seen) -- effects where it starts (explosions often use these)
     -- deliveries that fly a separate entity (projectile, artillery shell, stream, beam) carry its effects
     local entity_name = d.projectile or d.stream or d.beam
     if entity_name and not seen[entity_name] then
@@ -88,6 +108,7 @@ for name, ammo in pairs(data.raw["ammo"] or {}) do
     walk_trigger(ammo_type.action, result, 0)
   end
   if name:find("atomic") or name:find("nuke") then result.danger = result.danger or "named like a nuke" end
+  if NEVER_AUTOMATIC[name] then result.danger = result.danger or NEVER_AUTOMATIC[name] end
   scores[name] = {
     score = result.damage,
     danger = result.danger,

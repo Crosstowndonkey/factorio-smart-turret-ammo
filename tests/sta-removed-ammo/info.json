@@ -1,0 +1,1 @@
+{"name": "sta-removed-ammo", "version": "0.0.1", "title": "Smart Turret Ammo: an ammo mod that the removed suite takes away (tests only)", "author": "Crosstowndonkey", "factorio_version": "2.1", "dependencies": ["base"]}

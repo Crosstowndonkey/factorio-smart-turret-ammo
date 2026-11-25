@@ -91,6 +91,7 @@ local function build_platform(f)
 end
 
 local qa = require("qa")
+local qa2 = require("qa2") -- the second QA pass (2026-11-25)
 local KEEP = 20 -- the default "ammo to keep in each turret" (it was 50 before 0.1.1)
 
 script.on_init(function()
@@ -124,6 +125,7 @@ script.on_init(function()
 
   -- the scenarios from the 0.1.1 QA pass, each in its own little base far from this one
   qa.setup(f)
+  qa2.setup(f)
 end)
 
 local function check(name, ok, detail)
@@ -133,6 +135,7 @@ end
 
 script.on_event(defines.events.on_tick, function(e)
   qa.on_tick(e.tick)
+  qa2.on_tick(e.tick)
   if e.tick ~= 6000 then return end
   local T = storage.T
   local function d(t) local n, q, c = ammo_of(t) return tostring(n) .. "/" .. tostring(q) .. " x" .. c end
@@ -213,5 +216,6 @@ script.on_event(defines.events.on_tick, function(e)
   local yellow_back = game.surfaces.nauvis.find_entities_filtered{name = "storage-chest", position = {3.5, -2.5}, radius = 1}[1].get_item_count("firearm-magazine")
   check("the swapped-out yellow ammo went back to storage (210, minus " .. KEEP .. " for the blueprint turret)", yellow_back == 210 - KEEP, "chest has " .. yellow_back)
   qa.final_checks(check)
+  qa2.final_checks(check)
   print("STA DONE failures=" .. (storage.failed or 0))
 end)

@@ -1,4 +1,30 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.2
+Date: 2026-11-25
+  Bugfixes:
+    - The artillery turret's window had no ammo panel, so its ammo couldn't be picked.
+    - Without the Quality mod (games without Space Age, Space Exploration, Krastorio 2 and others) the mod did nothing: no turret was ever filled.
+    - The game crashed when a turret's picked ammo named a quality the game doesn't have (a blueprint from a game with other quality mods, or another mod's remote call), or when a blueprint's ammo setting was damaged. An unknown quality now means normal.
+    - A save crashed on loading after removing a mod whose ammo a turret was picked to. Such picks are dropped and the turret goes back to automatic.
+    - Cerys' neutron bomb (and any ammo that hides a huge blast inside the explosion it makes) was loaded into artillery. It now counts as dangerous, like nukes.
+    - A turret in reach of a roboport without construction robots (one whose robots haven't arrived, or a Repair Turret) could wait forever for ammo nothing could bring. Networks without construction robots are now ignored.
+    - A swap that robots could never finish (no storage chest to take the old ammo to) stayed open forever and kept the better ammo from every other turret. It is now given up after 20 seconds, and that turret waits 5 minutes before trying a swap again.
+    - Far-away turrets (early game, slow robots) had their request withdrawn while the robots were still flying the last of an ammo, so they took two to three times longer to fill. A request is now kept while robots are on their way with it.
+    - An empty turret could be given a couple of rare magazines and stay nearly empty while plenty of normal ammo sat in storage. It now takes the best ammo there is a refill's worth of.
+    - A low turret whose ammo had run out in storage wasn't refilled until it was completely empty. It now swaps to another ammo that has a full load to spare (on planets, once it stops shooting).
+    - Turrets picked to a new ammo threw out a full load for a handful of it while that ammo was still being made. They now swap only when a full load of the pick is there; an empty turret still takes any amount.
+    - "Never use these ammo items", "Use ammo from other mods" and other mods' blocks were ignored for turrets with a picked ammo. While its ammo is blocked, a turret keeps the ammo it has and then gets the best allowed ammo (the panel says why), and the pick comes back once the ammo is allowed again.
+    - With "Use ammo from other mods" off, the game's own cannon shells, shotgun shells and flamethrower ammo, and Space Age's tesla ammo, counted as modded and were never used.
+    - A turret moved by cloning (spaceship and "move base" mods) with a request open kept asking for ammo that wasn't there, forever.
+    - A turret placed by another mod's script without a build event was never looked after. It now is, as soon as you open it or pick its ammo.
+    - Hidden turrets that other mods use as internal parts were filled by robots. They are now left alone.
+    - Space Exploration's plague bomb is never loaded automatically.
+  Changes:
+    - Quality now counts for the damage it adds (+30% a level): legendary yellow magazines (12.5 a shot) are no longer swapped out for normal red (8). At the same quality the order is as before.
+    - Big bases run smoother: the once-a-second pause with many open requests is gone (about 2.6 ms on average with 1,260 turrets, now 0.15 ms), and an idle wall of turrets costs about half as much script time.
+    - In multiplayer, the ammo panel shows a new pick to everyone who has that turret open.
+    - Ammo that another mod adds after this mod has scored ammo is named in the log file (factorio-current.log). It is still never loaded automatically.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.1
 Date: 2026-11-24
   Bugfixes:

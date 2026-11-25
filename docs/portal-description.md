@@ -2,14 +2,16 @@ Gun, rocket, railgun and artillery turrets - and artillery wagons - keep themsel
 
 - **On planets**, construction robots bring ammo from your logistic network.
 - **On space platforms**, the hub throws it across from its inventory.
-- **Upgrades itself:** when your network has a full load of better ammo, the old ammo goes back to storage and the better ammo goes in (on planets, once the turret stops shooting). Yellow < red < uranium, rocket < explosive rocket, then higher quality.
-- **Shares scarce ammo:** no turret asks for ammo another turret is already waiting for, so none sits empty while other ammo is in storage.
+- **Upgrades itself:** when your network has a full load of better ammo, the old ammo goes back to storage and the better ammo goes in (on planets, once the turret stops shooting). Yellow < red < uranium, rocket < explosive rocket - and quality multiplies damage, so legendary yellow beats normal red.
+- **Never left low:** an empty turret takes the best ammo there is a refill's worth of, and a low turret whose ammo has run out swaps to another ammo with a full load to spare.
+- **Shares scarce ammo:** no turret asks for ammo another turret is already waiting for, and a request that can't be finished is given up, so none sits empty while other ammo is in storage.
 - **Pick the ammo yourself:** open a turret and use the **Auto-load ammo** panel beside its window. The picker only shows ammo that turret can fire (with quality). **Auto (best)** goes back to automatic. Copy / paste settings copies the choice, and blueprints, quality upgrades and rebuilt turrets remember it.
 
 ## Works with other mods
 - Any modded ammo turret or artillery is handled automatically.
+- Works in the base game alone too - no Space Age or Quality mod needed - and with Space Exploration or Krastorio 2.
 - Every ammo item from every mod is scored by its damage while the game loads (following projectiles, artillery shells, clusters and nested effects; area damage counts for more).
-- **Never uses dangerous ammo:** anything that makes a nuclear explosion, spawns units (like the capture robot rocket) or has a blast wider than 10 tiles - from any mod. Ammo you load by hand is left alone.
+- **Never uses dangerous ammo:** anything that makes a nuclear explosion, spawns units (like the capture robot rocket) or has a blast wider than 10 tiles - from any mod, even when the blast hides inside the explosion it makes (Cerys' neutron bomb). Space Exploration's plague bomb is never used either. Ammo you load by hand is left alone.
 
 ## Settings (Settings > Mod settings > Map)
 | Setting | Default |
@@ -29,7 +31,8 @@ Gun, rocket, railgun and artillery turrets - and artillery wagons - keep themsel
 - Artillery wagons are only loaded while their train is standing still.
 - The ammo in your inventory (or a spidertron's trunk) is never handed out, unless you turn that setting on.
 - Before you have construction robots the mod does nothing at all; hand-fed turrets are left as they are.
-- A turret down to its last few rounds of an ammo that has run out finishes them before switching, so it never swaps back and forth.
+- A turret low on an ammo that has run out switches to another ammo only when a full load of it is there, so it never swaps back and forth.
+- A picked ammo that you later block (the "Never use" setting) is set aside: the turret keeps the ammo it has, then gets the best allowed ammo, until the pick is allowed again.
 
 ## For mod authors
 ```lua
